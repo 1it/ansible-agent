@@ -1,0 +1,6 @@
+# Default ansible-agent vars
+PROJECT_DIR="/var/lib/ansible/default"
+INVENTORY="$PROJECT_DIR/inventory/local"
+PLAY_DIR="$PROJECT_DIR/playbooks"
+PLAY="local.yml"
+TAGS=""

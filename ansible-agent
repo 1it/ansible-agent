@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+set -eo pipefail; [[ $TRACE ]] && set -x
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+HOST=`hostname -s`
+
+# Default ansible-agent vars
+REPO_LINK="https://github.com/1it/ansible-test.git"
+PROJECT_DIR="/var/lib/ansible/default"
+INVENTORY="$PROJECT_DIR/inventory/local"
+PLAY_DIR="$PROJECT_DIR/playbooks"
+PLAY="local.yml"
+TAGS=""
+
+# Read your vars (source)
+if [ -f ~/.ansible-agent ]; then
+    . ~/.ansible-agent
+else
+# Run ansible-agent initialization
+    initial
+fi
+
+# Repo self-update
+project_repo_update () {
+    cd "$PROJECT_DIR"
+    git clean -f -d
+    git reset --hard HEAD
+    git pull
+    git checkout master
+}
+
+pip_ansible_update () {
+    # Set ansible version
+    ansible_version=2.2.1.0
+    # Check current version
+    ansible_current=`ansible --version |awk '/^ansible/{print $2}'`
+    ansible_pip=`pip show ansible | awk '/^Version/{ print $2 }'`
+
+if [ $ansible_current != $ansible_version ] || [ $ansible_pip != $ansible_version ]; then
+    pip uninstall -y ansible
+    pip install --force-reinstall ansible==$ansible_version
+fi
+}
+
+get_ansible () {
+    # Check ansible exists
+    # And install it if not
+    ansible=`which ansible`
+
+    if [ ! -f $ansible ]; then
+        curl -s https://raw.githubusercontent.com/1it/get-ansible/master/ansible_install.sh | sh
+    fi
+}
+
+ansible_agent_selfupdate () {
+    link='https://github.com/1it/ansible-agent'
+
+    if [ ! -d $PROJECT_DIR/ansible-agent ]; then
+        git clone $link
+    fi
+
+    cd $PROJECT_DIR/ansible-agent
+    git clean -f -d
+    git reset --hard HEAD
+    git pull
+    git checkout master
+
+    cp -f "$PROJECT_DIR"/ansible-agent /usr/local/bin/ansible-agent
+}
+
+# Run ansible-playbooks
+run_playbooks () {
+    # Check ansible exists
+    get_ansible
+
+    cd $PROJECT_DIR
+
+    # Run tasks with tags
+    if [ -z $TAGS ]; then
+        ansible-playbook -i "$INVENTORY" "$PLAY_DIR"/"$PLAY" --tags "$TAGS"
+    # Or run tasks without tags
+    else
+        ansible-playbook -i "$INVENTORY" "$PLAY_DIR"/"$PLAY"
+    fi
+
+}
+
+all () {
+    get_ansible
+    project_repo_update
+    ansible_agent_selfupdate
+    run_playbooks
+}
+
+# Init tasks
+initial () {
+    echo 'Checking your ansible version'
+    get_ansible
+    read -esp 'Enter your ansible project git link: ' REPO_LINK
+    read -esp 'Enter your want to store your project: ' -i '/var/lib/ansible/default' PROJECT_DIR
+    echo 'Cloning your project'
+    git clone $REPO_LINK $PROJECT_DIR
+    read -esp 'Enter playbook name you want to run with ansible-agent: ' -i "local.yml" PLAY
+    read -esp 'Enter playbook tags (empty by default): ' -i "" TAGS
+    echo "PROJECT_DIR=$PROJECT_DIR\n" > ~/.ansible-agent
+    echo "REPO_LINK=$REPO_LINK\n" >> ~/.ansible-agent
+    echo "PLAY=$PLAY\n" >> ~/.ansible-agent
+    if [ -z $TAGS ]; then
+        echo "TAGS=$TAGS\n" >> ~/.ansible-agent
+    fi
+}
+
+show_usage ()
+{
+    echo "This script make system packages upgrade and all environment update tasks"
+    echo "See ansible-agent --help for additional information"
+}
+
+show_help ()
+{
+    echo "Usage: ansible-agent [OPTION]"
+    echo ""
+    echo "-p  | play             run local playbooks (e.g. update configs)"
+    echo "-s  | selfupdate       ansible-agent selfupdate"
+    echo "-r  | update           pull your project repo updates"
+    echo "-a  | all              run all tasks"
+    echo "-i  | initial             first run"
+    echo ""
+    echo "Example: "
+    echo "   sudo ansible-agent all"
+}
+
+case $1 in
+    -i|initial)
+        initial
+        ;;
+    -p|play)
+        run_playbooks
+        ;;
+    -s|selfupdate)
+        ansible_agent_selfupdate
+        ;;
+    -r|update)
+        project_repo_update
+        ;;
+    -a|all)
+        all
+        ;;
+    -h|--help)
+        show_help
+        ;;
+    -u|--usage)
+        show_usage
+        ;;
+    *)
+        show_help
+        exit 1
+        ;;
+esac
