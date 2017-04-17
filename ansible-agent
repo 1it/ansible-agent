@@ -18,17 +18,28 @@ if [ -f ~/.ansible-agent ]; then
     . ~/.ansible-agent
 else
 # Run ansible-agent initialization
-    initial
+    echo 'No ~/.ansible-agent config file found. Please make initial run: ./ansible-agent -i'
 fi
 
-# Repo self-update
+get_ansible () {
+    # Check ansible exists
+    # And install it if not
+    ansible=`which ansible`
+
+    if [ ! -f $ansible ]; then
+        curl -s https://raw.githubusercontent.com/1it/get-ansible/master/ansible_install.sh | sh
+    fi
+}
+
 project_repo_update () {
+    # Repo self-update
     cd "$PROJECT_DIR"
     git clean -f -d
     git reset --hard HEAD
     git pull
     git checkout master
 }
+
 
 pip_ansible_update () {
     # Set ansible version
@@ -41,16 +52,6 @@ if [ $ansible_current != $ansible_version ] || [ $ansible_pip != $ansible_versio
     pip uninstall -y ansible
     pip install --force-reinstall ansible==$ansible_version
 fi
-}
-
-get_ansible () {
-    # Check ansible exists
-    # And install it if not
-    ansible=`which ansible`
-
-    if [ ! -f $ansible ]; then
-        curl -s https://raw.githubusercontent.com/1it/get-ansible/master/ansible_install.sh | sh
-    fi
 }
 
 ansible_agent_selfupdate () {
@@ -83,7 +84,6 @@ run_playbooks () {
     else
         ansible-playbook -i "$INVENTORY" "$PLAY_DIR"/"$PLAY"
     fi
-
 }
 
 all () {
@@ -97,17 +97,18 @@ all () {
 initial () {
     echo 'Checking your ansible version'
     get_ansible
-    read -esp 'Enter your ansible project git link: ' REPO_LINK
-    read -esp 'Enter your want to store your project: ' -i '/var/lib/ansible/default' PROJECT_DIR
+
+    read -ep 'Enter your ansible project git link: ' REPO_LINK
+    read -ep 'Enter your want to store your project: ' -i '/var/lib/ansible/default' PROJECT_DIR
+    read -ep 'Enter playbook name you want to run with ansible-agent: ' -i "local.yml" PLAY
+    read -ep 'Enter playbook tags (empty by default): ' -i "" TAGS
     echo 'Cloning your project'
     git clone $REPO_LINK $PROJECT_DIR
-    read -esp 'Enter playbook name you want to run with ansible-agent: ' -i "local.yml" PLAY
-    read -esp 'Enter playbook tags (empty by default): ' -i "" TAGS
-    echo "PROJECT_DIR=$PROJECT_DIR\n" > ~/.ansible-agent
-    echo "REPO_LINK=$REPO_LINK\n" >> ~/.ansible-agent
-    echo "PLAY=$PLAY\n" >> ~/.ansible-agent
+    echo -e "PROJECT_DIR=$PROJECT_DIR" > ~/.ansible-agent
+    echo -e "REPO_LINK=$REPO_LINK" >> ~/.ansible-agent
+    echo -e "PLAY=$PLAY" >> ~/.ansible-agent
     if [ -z $TAGS ]; then
-        echo "TAGS=$TAGS\n" >> ~/.ansible-agent
+        echo -e "TAGS='$TAGS'" >> ~/.ansible-agent
     fi
 }
 
